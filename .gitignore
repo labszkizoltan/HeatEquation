@@ -1,0 +1,11 @@
+# Directories
+HeatEquation/.vs/*
+HeatEquation/x64/*
+HeatEquation/vendor/*
+
+# Files
+*\.vs/*
+
+
+
+
