@@ -47,7 +47,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;WIN64;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\src\utilities;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\vendor\glm\glm;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\vendor\GLFW\include\GLFW;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\vendor\GLAD\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\ProgramData\NVIDIA Corporation\CUDA Samples\v11.1\common\inc;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\src\utilities;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\vendor\glm\glm;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\vendor\GLFW\include\GLFW;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\vendor\GLAD\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -67,7 +67,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;WIN64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\src\utilities;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\vendor\glm\glm;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\vendor\GLFW\include\GLFW;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\vendor\GLAD\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\ProgramData\NVIDIA Corporation\CUDA Samples\v11.1\common\inc;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\src\utilities;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\vendor\glm\glm;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\vendor\GLFW\include\GLFW;D:\cpp_codes\29_CUDA_OpenGL\HeatEquation\HeatEquation\vendor\GLAD\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -89,9 +89,12 @@
     <ClInclude Include="src\controls\observer.h" />
     <ClInclude Include="src\rendering\buffer.h" />
     <ClInclude Include="src\rendering\coloured_mesh.h" />
+    <ClInclude Include="src\rendering\grid_factory\CreateGridData.h" />
     <ClInclude Include="src\rendering\renderer.h" />
     <ClInclude Include="src\rendering\shader.h" />
-    <ClInclude Include="src\rendering\shader_sources\ShaderSources.h" />
+    <ClInclude Include="src\rendering\shader_sources\ColouredShaderSources.h" />
+    <ClInclude Include="src\rendering\shader_sources\SimpleShaderSources.h" />
+    <ClInclude Include="src\rendering\simple_mesh.h" />
     <ClInclude Include="src\utilities\Matrix_3D.h" />
     <ClInclude Include="src\utilities\Vector_3D.h" />
     <ClInclude Include="src\window\window_context.h" />
@@ -100,7 +103,9 @@
     <ClCompile Include="src\controls\observer.cpp" />
     <ClCompile Include="src\rendering\buffer.cpp" />
     <ClCompile Include="src\rendering\coloured_mesh.cpp" />
+    <ClCompile Include="src\rendering\grid_factory\CreateGridData.cpp" />
     <ClCompile Include="src\rendering\shader.cpp" />
+    <ClCompile Include="src\rendering\simple_mesh.cpp" />
     <ClCompile Include="src\utilities\Matrix_3D.cpp" />
     <ClCompile Include="src\utilities\Vector_3D.cpp" />
     <ClCompile Include="src\window\window_context.cpp" />

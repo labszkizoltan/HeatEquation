@@ -2,16 +2,23 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
+#include "helper_cuda.h"
+
 #include "src/window/window_context.h"
 #include "src/controls/observer.h"
 #include "src/rendering/coloured_mesh.h"
+#include "src/rendering/simple_mesh.h"
 #include "src/rendering/shader.h"
-#include "src/rendering/shader_sources/ShaderSources.h"
+#include "src/rendering/shader_sources/ColouredShaderSources.h"
+#include "src/rendering/shader_sources/SimpleShaderSources.h"
+#include "src/rendering/grid_factory/CreateGridData.h"
+
 #include "src/utilities/Matrix_3D.h"
 
 
 #include <stdio.h>
 
+#include <cuda_gl_interop.h> // this has to be included after some other headers, not sure which ones, havent tried all possibilities so I put this to the end, but at first this caused a compile error!!!
 
 const int windowWidth = 1200;
 const int windowHeight = 800;
@@ -42,30 +49,35 @@ __global__ void addKernel(int *c, const int *a, const int *b)
     c[i] = a[i] + b[i];
 }
 
+
+
+__global__ void simple_vbo_kernel(float3* pos, unsigned int gridSize, float time)
+{
+//    unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+//    unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    unsigned int x = threadIdx.x;
+    unsigned int y = threadIdx.y;
+
+    // prime numbers from https://primes.utm.edu/lists/small/10000.txt
+    int quasiRand = (101119*(threadIdx.x+threadIdx.y+(int)time)+82031)%7993;
+    float qRand = (float)quasiRand / (float)7993 - 0.5f;
+
+
+    // write output vertex
+//    pos[y * gridSize + x].y += 1.005f;
+    pos[y * gridSize + x].y += 0.1f*qRand;
+    pos[y * gridSize + x].y *= 0.997f;
+}
+
+
+
+
+
+
 int main()
 {
-    const int arraySize = 5;
-    const int a[arraySize] = { 1, 2, 3, 4, 5 };
-    const int b[arraySize] = { 10, 20, 30, 40, 50 };
-    int c[arraySize] = { 0 };
-
-    // Add vectors in parallel.
-    cudaError_t cudaStatus = addWithCuda(c, a, b, arraySize);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addWithCuda failed!");
-        return 1;
-    }
-
-    printf("{1,2,3,4,5} + {10,20,30,40,50} = {%d,%d,%d,%d,%d}\n",
-        c[0], c[1], c[2], c[3], c[4]);
-
-    // cudaDeviceReset must be called before exiting in order for profiling and
-    // tracing tools such as Nsight and Visual Profiler to show complete traces.
-    cudaStatus = cudaDeviceReset();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceReset failed!");
-        return 1;
-    }
+    uint32_t gridSize = 32;
 
     // CUDA part over, lets try setting up a window
 
@@ -76,23 +88,50 @@ int main()
     Observer observer;
     appWindow.SetUserPointer(&observer);
 
+    // create a simple non coloured mesh, just a triangle
+    std::vector<Vec3D> vertexData = GridFactory::CreateGridVertexData(gridSize, 10.0f);
+    std::vector<uint32_t> indexData = GridFactory::CreateGridIndexData(gridSize);
+    SimpleMesh SimpleTriangleMesh(vertexData, indexData);
 
-    // create a coloured mesh, just a triangle
-    std::vector<Vec3D> vertexAndColourData = { {0,0,0},{0,0,0}, {1,0,0},{1,0,0}, {0,1,0},{0,1,0} };
-    ColouredMesh triangleMesh(vertexAndColourData, { 0,1,2 });
-
-    // create a shader
-    Shader myShader(VertexShader_Coloured, FragmentShader_Coloured);
+    Shader simpleShader(VertexShader_Simple, FragmentShader_Simple);
     {
-        myShader.Bind();
-        myShader.UploadUniformFloat3("body_translation", glm::vec3(0.0f, 0.0f, 0.0f));
-        myShader.UploadUniformMat3("body_orientation", glm::mat3(1.0f));
-        myShader.UploadUniformFloat("body_scale", 1.0f);
-        myShader.UploadUniformFloat3("observer_translation", glm::vec3(0.0f, 0.0f, 0.0f));
-        myShader.UploadUniformMat3("observer_orientation", glm::mat3(1.0f));
-        myShader.UploadUniformFloat("zoom_level", 1.0f);
-        myShader.UploadUniformFloat("aspect_ratio", (float)windowWidth/(float)windowHeight);
+        simpleShader.Bind();
+        simpleShader.UploadUniformFloat3("body_translation", glm::vec3(0.0f, 0.0f, 0.0f));
+        simpleShader.UploadUniformMat3("body_orientation", glm::mat3(1.0f));
+        simpleShader.UploadUniformFloat("body_scale", 1.0f);
+        simpleShader.UploadUniformFloat3("observer_translation", glm::vec3(0.0f, 0.0f, 0.0f));
+        simpleShader.UploadUniformMat3("observer_orientation", glm::mat3(1.0f));
+        simpleShader.UploadUniformFloat("zoom_level", 1.0f);
+        simpleShader.UploadUniformFloat("aspect_ratio", (float)windowWidth / (float)windowHeight);
+        simpleShader.UploadUniformFloat("amplitude", 10.0f);
     }
+
+
+    // Cuda functions that need to be called
+//  cudaGraphicsGLRegisterBuffer // once after the vertex buffer has been created
+//  cudaGraphicsMapResources // every time in the rendering loop
+//  cudaGraphicsResourceGetMappedPointer // every time in the rendering loop
+//  cudaGraphicsUnmapResources // every time in the rendering loop
+//  cudaGraphicsUnregisterResource // once after the vertex buffer has been destroyed
+
+
+    struct cudaGraphicsResource* cuda_vbo_resource;
+    checkCudaErrors(cudaGraphicsGLRegisterBuffer(&cuda_vbo_resource, (GLuint)SimpleTriangleMesh.m_VertexBuffer.m_RendererID, cudaGraphicsMapFlagsNone));
+
+    // map OpenGL buffer object for writing from CUDA
+//    struct cudaGraphicsResource* cuda_vbo_resource;
+////    cudaGraphicsResource** vbo_resource;
+//    float3* dptr;
+//    checkCudaErrors(cudaGraphicsMapResources(1, vbo_resource, 0));
+//    size_t num_bytes;
+//    checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&dptr, &num_bytes,
+//        *vbo_resource));
+
+
+    // execute the kernel
+
+    // unmap buffer object
+//    checkCudaErrors(cudaGraphicsUnmapResources(1, vbo_resource, 0));
 
 
     float time = (float)glfwGetTime();
@@ -100,29 +139,38 @@ int main()
     float timestep = 0.0f; // timestep can be initialized like this, because its constructor takes in only one float, implicit cast is possible
     float lastFrameTime = 0.0f;
 
-
     // Game loop
     while (!glfwWindowShouldClose(appWindow.GetWindow()))
     {
         lastFrameTime = (float)glfwGetTime();
         appWindow.HandleUserInputs(observer, timestep*timeSpeed);
-        observer.SetObserverInShader(myShader);
-
-        glClearColor(0.2f, 0.1f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Set the speed of the simulation, note that the quality of the update will be worse, as the timestep will be bigger
         SetTimeSpeed(appWindow, timeSpeed);
 
-        myShader.UploadUniformFloat3("body_translation", glm::vec3(0.0f, 0.0f, 0.0f));
-        myShader.UploadUniformMat3("body_orientation", glm::mat3(1.0f));
-        myShader.UploadUniformFloat("body_scale", 1.0f);
-        triangleMesh.Draw();
+        observer.SetObserverInShader(simpleShader);
+        
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        myShader.UploadUniformFloat3("body_translation", glm::vec3(-2.0f, 0.0f, 3.0f));
-        myShader.UploadUniformMat3("body_orientation", glm::mat3(1.0f));
-        myShader.UploadUniformFloat("body_scale", 2.0f);
-        triangleMesh.Draw();
+        // --------------------- //
+        // do the CUDA part here //
+
+        float3* dptr;
+        size_t num_bytes;
+
+        checkCudaErrors(cudaGraphicsMapResources(1, &cuda_vbo_resource, 0));
+        checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&dptr, &num_bytes, cuda_vbo_resource));
+
+        // launch kernel here_
+        simple_vbo_kernel <<<1, gridSize * gridSize>>> (dptr, gridSize, lastFrameTime);
+
+        checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_vbo_resource, 0));
+
+        // --------------------- //
+
+
+        SimpleTriangleMesh.Draw();
 
         // Swap the screen buffers
         glfwSwapBuffers(appWindow.GetWindow());
@@ -131,6 +179,9 @@ int main()
         timestep = (float)glfwGetTime() - lastFrameTime;
         //		timestep = 0.017f;
     }
+
+
+    checkCudaErrors(cudaGraphicsUnregisterResource(cuda_vbo_resource));
 
     // Terminates GLFW, clearing any resources allocated by GLFW.
     glfwTerminate();
@@ -142,82 +193,4 @@ int main()
     return 0;
 }
 
-// Helper function for using CUDA to add vectors in parallel.
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size)
-{
-    int *dev_a = 0;
-    int *dev_b = 0;
-    int *dev_c = 0;
-    cudaError_t cudaStatus;
 
-    // Choose which GPU to run on, change this on a multi-GPU system.
-    cudaStatus = cudaSetDevice(0);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-        goto Error;
-    }
-
-    // Allocate GPU buffers for three vectors (two input, one output)    .
-    cudaStatus = cudaMalloc((void**)&dev_c, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMalloc((void**)&dev_a, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMalloc((void**)&dev_b, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    // Copy input vectors from host memory to GPU buffers.
-    cudaStatus = cudaMemcpy(dev_a, a, size * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMemcpy(dev_b, b, size * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-    // Launch a kernel on the GPU with one thread for each element.
-    addKernel<<<1, size>>>(dev_c, dev_a, dev_b);
-
-    // Check for any errors launching the kernel
-    cudaStatus = cudaGetLastError();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-        goto Error;
-    }
-    
-    // cudaDeviceSynchronize waits for the kernel to finish, and returns
-    // any errors encountered during the launch.
-    cudaStatus = cudaDeviceSynchronize();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-        goto Error;
-    }
-
-    // Copy output vector from GPU buffer to host memory.
-    cudaStatus = cudaMemcpy(c, dev_c, size * sizeof(int), cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-Error:
-    cudaFree(dev_c);
-    cudaFree(dev_a);
-    cudaFree(dev_b);
-    
-    return cudaStatus;
-}
