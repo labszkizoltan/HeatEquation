@@ -16,7 +16,9 @@ namespace GridFactory
 		{
 			for (int j = 0; j < n; j++)
 			{
-				gridData[n*i+j] = Vec3D(float(i), amplitude*(float)rand()/((float)RAND_MAX), float(j));
+//				gridData[n * i + j] = Vec3D(float(i), amplitude * (float)rand() / ((float)RAND_MAX), float(j));
+//				gridData[n * i + j] = Vec3D(float(i), amplitude * (((i < (n / 2)) && (j < (n / 2))) ? 1.0f : 0.0f), float(j));
+				gridData[n * i + j] = Vec3D(float(i), amplitude * (((i<(3*n/4)) && (j<(3*n/4)) && (i>(n/4)) && (j>(n/4))) ? 1.0f : 0.0f), float(j));
 			}
 		}
 

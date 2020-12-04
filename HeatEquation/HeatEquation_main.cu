@@ -40,18 +40,7 @@ void SetTimeSpeed(MyWindow& appWindow, float& timeSpeed)
 }
 
 
-
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
-
-__global__ void addKernel(int *c, const int *a, const int *b)
-{
-    int i = threadIdx.x;
-    c[i] = a[i] + b[i];
-}
-
-
-
-__global__ void simple_vbo_kernel(float3* pos, unsigned int gridSize, float time)
+__global__ void simple_vbo_kernel(float3* pos_1, float3* pos_2, unsigned int gridSize, float time)
 {
 //    unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
 //    unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -65,11 +54,40 @@ __global__ void simple_vbo_kernel(float3* pos, unsigned int gridSize, float time
 
 
     // write output vertex
-//    pos[y * gridSize + x].y += 1.005f;
-    pos[y * gridSize + x].y += 0.1f*qRand;
-    pos[y * gridSize + x].y *= 0.997f;
+    pos_1[y * gridSize + x].y += 0.5f*qRand;
+    pos_1[y * gridSize + x].y *= 0.997f;
 }
 
+
+__global__ void HeatEquation_kernel(float3* target, float3* source, unsigned int gridSize, float deltaTime)
+{
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+//    if (i < (gridSize * gridSize-1) && i>1)
+    if (i < (gridSize*gridSize))
+    {
+        unsigned int x = i / gridSize;
+        unsigned int y = i % gridSize;
+
+        unsigned int x_next = (x == (gridSize - 1)) ? 0 : x + 1;
+        unsigned int x_prev = (x == 0) ? (gridSize - 1) : x - 1;
+        unsigned int y_next = (y == (gridSize - 1)) ? 0 : y + 1;
+        unsigned int y_prev = (y == 0) ? (gridSize - 1) : y - 1;
+
+        // write output vertex
+        target[y * gridSize + x].y = source[y * gridSize + x].y + deltaTime * (source[y_next * gridSize + x].y + source[y_prev * gridSize + x].y + source[y * gridSize + x_next].y + source[y * gridSize + x_prev].y - 4.0f * source[y * gridSize + x].y);
+    }
+}
+
+
+__global__ void SyncVertexBuffers_kernel(float3* target, float3* source, unsigned int gridSize)
+{
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < (gridSize * gridSize))
+    {
+        target[i].y = source[i].y;
+    }
+}
 
 
 
@@ -77,7 +95,9 @@ __global__ void simple_vbo_kernel(float3* pos, unsigned int gridSize, float time
 
 int main()
 {
-    uint32_t gridSize = 32;
+    uint32_t gridSize = 1000;
+    uint32_t gridElements = gridSize * gridSize;
+    float amplitude = 500.0f;
 
     // CUDA part over, lets try setting up a window
 
@@ -86,12 +106,14 @@ int main()
     appWindow.SetMouseScrollCallback(mouse_scroll_callback); std::cout << glfwGetError(NULL) << "\n";
 
     Observer observer;
+    observer.translation = Vec3D(0.5f * (float)gridSize, 10.0f, -20.0f);// observer.TurnDown(0.5f);
     appWindow.SetUserPointer(&observer);
 
     // create a simple non coloured mesh, just a triangle
-    std::vector<Vec3D> vertexData = GridFactory::CreateGridVertexData(gridSize, 10.0f);
+    std::vector<Vec3D> vertexData = GridFactory::CreateGridVertexData(gridSize, amplitude);
     std::vector<uint32_t> indexData = GridFactory::CreateGridIndexData(gridSize);
-    SimpleMesh SimpleTriangleMesh(vertexData, indexData);
+    SimpleMesh GridMesh_1(vertexData, indexData);
+    SimpleMesh GridMesh_2(vertexData, indexData);
 
     Shader simpleShader(VertexShader_Simple, FragmentShader_Simple);
     {
@@ -99,11 +121,11 @@ int main()
         simpleShader.UploadUniformFloat3("body_translation", glm::vec3(0.0f, 0.0f, 0.0f));
         simpleShader.UploadUniformMat3("body_orientation", glm::mat3(1.0f));
         simpleShader.UploadUniformFloat("body_scale", 1.0f);
-        simpleShader.UploadUniformFloat3("observer_translation", glm::vec3(0.0f, 0.0f, 0.0f));
+        simpleShader.UploadUniformFloat3("observer_translation", glm::vec3(0.0f, 5.0f, -10.0f));
         simpleShader.UploadUniformMat3("observer_orientation", glm::mat3(1.0f));
         simpleShader.UploadUniformFloat("zoom_level", 1.0f);
         simpleShader.UploadUniformFloat("aspect_ratio", (float)windowWidth / (float)windowHeight);
-        simpleShader.UploadUniformFloat("amplitude", 10.0f);
+        simpleShader.UploadUniformFloat("amplitude", amplitude);
     }
 
 
@@ -115,27 +137,14 @@ int main()
 //  cudaGraphicsUnregisterResource // once after the vertex buffer has been destroyed
 
 
-    struct cudaGraphicsResource* cuda_vbo_resource;
-    checkCudaErrors(cudaGraphicsGLRegisterBuffer(&cuda_vbo_resource, (GLuint)SimpleTriangleMesh.m_VertexBuffer.m_RendererID, cudaGraphicsMapFlagsNone));
-
-    // map OpenGL buffer object for writing from CUDA
-//    struct cudaGraphicsResource* cuda_vbo_resource;
-////    cudaGraphicsResource** vbo_resource;
-//    float3* dptr;
-//    checkCudaErrors(cudaGraphicsMapResources(1, vbo_resource, 0));
-//    size_t num_bytes;
-//    checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&dptr, &num_bytes,
-//        *vbo_resource));
-
-
-    // execute the kernel
-
-    // unmap buffer object
-//    checkCudaErrors(cudaGraphicsUnmapResources(1, vbo_resource, 0));
+    struct cudaGraphicsResource* cuda_vbo_resource_1;
+    checkCudaErrors(cudaGraphicsGLRegisterBuffer(&cuda_vbo_resource_1, (GLuint)GridMesh_1.m_VertexBuffer.m_RendererID, cudaGraphicsMapFlagsNone));
+    struct cudaGraphicsResource* cuda_vbo_resource_2;
+    checkCudaErrors(cudaGraphicsGLRegisterBuffer(&cuda_vbo_resource_2, (GLuint)GridMesh_2.m_VertexBuffer.m_RendererID, cudaGraphicsMapFlagsNone));
 
 
     float time = (float)glfwGetTime();
-    float timeSpeed = 1.0f; // PARAMETER initial time speed
+    float timeSpeed = 0.0f; // PARAMETER initial time speed
     float timestep = 0.0f; // timestep can be initialized like this, because its constructor takes in only one float, implicit cast is possible
     float lastFrameTime = 0.0f;
 
@@ -143,7 +152,8 @@ int main()
     while (!glfwWindowShouldClose(appWindow.GetWindow()))
     {
         lastFrameTime = (float)glfwGetTime();
-        appWindow.HandleUserInputs(observer, timestep*timeSpeed);
+//        appWindow.HandleUserInputs(observer, timestep*timeSpeed);
+        appWindow.HandleUserInputs(observer, timestep);
 
         // Set the speed of the simulation, note that the quality of the update will be worse, as the timestep will be bigger
         SetTimeSpeed(appWindow, timeSpeed);
@@ -156,21 +166,26 @@ int main()
         // --------------------- //
         // do the CUDA part here //
 
-        float3* dptr;
+        float3 *dptr_1, *dptr_2;
         size_t num_bytes;
 
-        checkCudaErrors(cudaGraphicsMapResources(1, &cuda_vbo_resource, 0));
-        checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&dptr, &num_bytes, cuda_vbo_resource));
+        checkCudaErrors(cudaGraphicsMapResources(1, &cuda_vbo_resource_1, 0));
+        checkCudaErrors(cudaGraphicsMapResources(1, &cuda_vbo_resource_2, 0));
+        checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&dptr_1, &num_bytes, cuda_vbo_resource_1));
+        checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&dptr_2, &num_bytes, cuda_vbo_resource_1));
 
-        // launch kernel here_
-        simple_vbo_kernel <<<1, gridSize * gridSize>>> (dptr, gridSize, lastFrameTime);
+        // launch kernel here
+        HeatEquation_kernel <<<gridElements/256+1, 256>>> (dptr_1, dptr_2, gridSize, timestep*timeSpeed);
+//        checkCudaErrors(cudaDeviceSynchronize());
+        HeatEquation_kernel <<<gridElements/256+1, 256>>> (dptr_2, dptr_1, gridSize, timestep*timeSpeed);
 
-        checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_vbo_resource, 0));
+        checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_vbo_resource_1, 0));
+        checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_vbo_resource_2, 0));
 
         // --------------------- //
 
 
-        SimpleTriangleMesh.Draw();
+        GridMesh_1.Draw();
 
         // Swap the screen buffers
         glfwSwapBuffers(appWindow.GetWindow());
@@ -180,15 +195,11 @@ int main()
         //		timestep = 0.017f;
     }
 
-
-    checkCudaErrors(cudaGraphicsUnregisterResource(cuda_vbo_resource));
+    checkCudaErrors(cudaGraphicsUnregisterResource(cuda_vbo_resource_1));
+    checkCudaErrors(cudaGraphicsUnregisterResource(cuda_vbo_resource_2));
 
     // Terminates GLFW, clearing any resources allocated by GLFW.
     glfwTerminate();
-
-
-
-
 
     return 0;
 }
