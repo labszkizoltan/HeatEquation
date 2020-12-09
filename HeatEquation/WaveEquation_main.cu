@@ -20,7 +20,7 @@
 
 #include "GlobalVariables.h"
 
-#include "src/cuda_kernels/HeatEquationKernels.cuh"
+//#include "src/cuda_kernels/HeatEquationKernels.cuh"
 #include "src/cuda_kernels/WaveEquationKernels.cuh"
 
 void mouse_scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
@@ -42,14 +42,21 @@ void SetTimeSpeed(MyWindow& appWindow, float& timeSpeed)
 
 int main()
 {
-    uint32_t gridSize = 500;
+    uint32_t gridSize = 100;
     uint32_t gridElements = gridSize * gridSize;
-    float amplitude = 0.2f*(float)100;
+    float amplitude = 0.2f * (float)100;
 
-    std::vector<float> granulatedGrid = GridFactory::MapAmplitudeFields(gridSize, g_CustomAmplitudes_10x10);
-    std::vector<float> granulatedHeatSrc = GridFactory::MapAmplitudeFields(gridSize, g_QuadrupleHeatSource_40x40);
+    std::vector<float> g_WaveEquationInitialCondition_100x100;
+    g_WaveEquationInitialCondition_100x100.resize(100 * 100);
+//    for (int i = 0; i < 100; i++) { g_WaveEquationInitialCondition_100x100[5000+i] = 1.0f; }
+    g_WaveEquationInitialCondition_100x100[5050] = 0.001f;
 
-    MyWindow appWindow(g_WindowWidth, g_WindowHeight, "HeatEquation"); std::cout << glfwGetError(NULL) << "\n";
+    std::vector<float> granulatedGrid = GridFactory::MapAmplitudeFields(gridSize, g_WaveEquationInitialCondition_100x100);
+    std::vector<float> flatGrid = GridFactory::MapAmplitudeFields(gridSize, g_FlatField_1x1);
+
+    
+
+    MyWindow appWindow(g_WindowWidth, g_WindowHeight, "WaveEquation"); std::cout << glfwGetError(NULL) << "\n";
     glfwSetWindowPos(appWindow.GetWindow(), 100, 200); std::cout << glfwGetError(NULL) << "\n";
     appWindow.SetMouseScrollCallback(mouse_scroll_callback); std::cout << glfwGetError(NULL) << "\n";
 
@@ -57,16 +64,15 @@ int main()
     observer.translation = Vec3D(0.5f * (float)gridSize, 10.0f, -20.0f);// observer.TurnDown(0.5f);
     appWindow.SetUserPointer(&observer);
 
-    // create a simple non coloured mesh, just a triangle
+
+    // Create the grids
     //std::vector<Vec3D> vertexData = GridFactory::CreateGridVertexData(gridSize, amplitude);
     std::vector<Vec3D> vertexData = GridFactory::CreateGridVertexData_with_amplitudes(gridSize, amplitude, granulatedGrid);
+    std::vector<Vec3D> flatVertexData = GridFactory::CreateGridVertexData_with_amplitudes(gridSize, amplitude, flatGrid);
     std::vector<uint32_t> indexData = GridFactory::CreateGridIndexData(gridSize);
-    SimpleMesh GridMesh_1(vertexData, indexData);
+    SimpleMesh GridMesh_1(flatVertexData, indexData);
     SimpleMesh GridMesh_2(vertexData, indexData);
-
-    std::vector<Vec3D> vertexDataHeatSrc = GridFactory::CreateGridVertexData_with_amplitudes(gridSize, amplitude, granulatedHeatSrc);
-    SimpleMesh HeatSrc(vertexDataHeatSrc, indexData);
-
+    SimpleMesh GridMesh_3(vertexData, indexData);
 
     Shader simpleShader(VertexShader_Simple, FragmentShader_Simple);
     {
@@ -78,7 +84,7 @@ int main()
         simpleShader.UploadUniformMat3("observer_orientation", glm::mat3(1.0f));
         simpleShader.UploadUniformFloat("zoom_level", 1.0f);
         simpleShader.UploadUniformFloat("aspect_ratio", (float)g_WindowWidth / (float)g_WindowHeight);
-        simpleShader.UploadUniformFloat("amplitude", amplitude);
+        simpleShader.UploadUniformFloat("amplitude", amplitude/10.0f);
     }
 
 
@@ -94,71 +100,75 @@ int main()
     checkCudaErrors(cudaGraphicsGLRegisterBuffer(&cuda_vbo_resource_1, (GLuint)GridMesh_1.m_VertexBuffer.m_RendererID, cudaGraphicsMapFlagsNone));
     struct cudaGraphicsResource* cuda_vbo_resource_2;
     checkCudaErrors(cudaGraphicsGLRegisterBuffer(&cuda_vbo_resource_2, (GLuint)GridMesh_2.m_VertexBuffer.m_RendererID, cudaGraphicsMapFlagsNone));
-    struct cudaGraphicsResource* cuda_vbo_resource_heatSrc;
-    checkCudaErrors(cudaGraphicsGLRegisterBuffer(&cuda_vbo_resource_heatSrc, (GLuint)HeatSrc.m_VertexBuffer.m_RendererID, cudaGraphicsMapFlagsNone));
+    struct cudaGraphicsResource* cuda_vbo_resource_3;
+    checkCudaErrors(cudaGraphicsGLRegisterBuffer(&cuda_vbo_resource_3, (GLuint)GridMesh_3.m_VertexBuffer.m_RendererID, cudaGraphicsMapFlagsNone));
 
     uint32_t blockSize = 320;
 
-    float time = (float)glfwGetTime();
     float timeSpeed = 0.0f; // PARAMETER initial time speed
-    float timestep = 0.0f; // timestep can be initialized like this, because its constructor takes in only one float, implicit cast is possible
-    float lastFrameTime = 0.0f;
+    float timestep = 0.1f; // timestep can be initialized like this, because its constructor takes in only one float, implicit cast is possible
+
+    int counter = 0, draw_frequency = 10;
 
     // Game loop
     while (!glfwWindowShouldClose(appWindow.GetWindow()))
     {
-        lastFrameTime = (float)glfwGetTime();
-//        appWindow.HandleUserInputs(observer, timestep*timeSpeed);
-        appWindow.HandleUserInputs(observer, timestep);
+//        appWindow.HandleUserInputs(observer, timestep);
 
         // Set the speed of the simulation, note that the quality of the update will be worse, as the timestep will be bigger
         SetTimeSpeed(appWindow, timeSpeed);
 
-        observer.SetObserverInShader(simpleShader);
-        
+//        observer.SetObserverInShader(simpleShader);
+
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // --------------------- //
-        // do the CUDA part here //
 
-        float3 *dptr_1, *dptr_2, *dptr_heatSrc;
-        size_t num_bytes;
-        checkCudaErrors(cudaGraphicsMapResources(1, &cuda_vbo_resource_1, 0));
-        checkCudaErrors(cudaGraphicsMapResources(1, &cuda_vbo_resource_2, 0));
-        checkCudaErrors(cudaGraphicsMapResources(1, &cuda_vbo_resource_heatSrc, 0));
-        checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&dptr_1, &num_bytes, cuda_vbo_resource_1));
-        checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&dptr_2, &num_bytes, cuda_vbo_resource_2));
-        checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&dptr_heatSrc, &num_bytes, cuda_vbo_resource_heatSrc));
+        if (timeSpeed > 0.0f)
+        {
 
-        // launch kernel here
-        HeatEquation_kernel <<<gridElements/blockSize+1, blockSize>>> (dptr_1, dptr_2, gridSize, timestep*timeSpeed);
-//        checkCudaErrors(cudaDeviceSynchronize());
-        HeatEquation_kernel <<<gridElements/blockSize+1, blockSize>>> (dptr_2, dptr_1, gridSize, timestep*timeSpeed);
+            // --------------------- //
+            // do the CUDA part here //
 
-        HeatSource_kernel <<<gridElements/blockSize+1, blockSize>>> (dptr_1, dptr_heatSrc, gridSize, amplitude, timestep * timeSpeed);
-        HeatSource_kernel <<<gridElements/blockSize+1, blockSize>>> (dptr_2, dptr_heatSrc, gridSize, amplitude, timestep * timeSpeed);
+            float3* dptr_1, * dptr_2, * dptr_3, * dptr_heatSrc;
+            size_t num_bytes;
+            checkCudaErrors(cudaGraphicsMapResources(1, &cuda_vbo_resource_1, 0));
+            checkCudaErrors(cudaGraphicsMapResources(1, &cuda_vbo_resource_2, 0));
+            checkCudaErrors(cudaGraphicsMapResources(1, &cuda_vbo_resource_3, 0));
+            checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&dptr_1, &num_bytes, cuda_vbo_resource_1));
+            checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&dptr_2, &num_bytes, cuda_vbo_resource_2));
+            checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&dptr_3, &num_bytes, cuda_vbo_resource_3));
 
-        checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_vbo_resource_1, 0));
-        checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_vbo_resource_2, 0));
-        checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_vbo_resource_heatSrc, 0));
+            // launch kernel here
+            WaveEquation_kernel <<<gridElements / blockSize + 1, blockSize >>> (dptr_1, dptr_2, dptr_3, gridSize, timestep*timeSpeed);
+            WaveEquation_kernel <<<gridElements / blockSize + 1, blockSize >>> (dptr_2, dptr_3, dptr_1, gridSize, timestep*timeSpeed);
+            WaveEquation_kernel <<<gridElements / blockSize + 1, blockSize >>> (dptr_3, dptr_1, dptr_2, gridSize, timestep*timeSpeed);
 
-        // --------------------- //
+            checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_vbo_resource_1, 0));
+            checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_vbo_resource_2, 0));
+            checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_vbo_resource_3, 0));
 
+            // --------------------- //
 
-        GridMesh_1.Draw();
+        }
 
+        if (counter > draw_frequency)
+        {
+            appWindow.HandleUserInputs(observer, timestep);
+            observer.SetObserverInShader(simpleShader);
+            GridMesh_1.Draw();
+            glfwSwapBuffers(appWindow.GetWindow());
+            counter = 0;
+        }
+        counter++;
         // Swap the screen buffers
-        glfwSwapBuffers(appWindow.GetWindow());
-
-        timestep = (float)glfwGetTime() - lastFrameTime;
-        //		timestep = 0.017f;
+//        glfwSwapBuffers(appWindow.GetWindow());
     }
 
     checkCudaErrors(cudaGraphicsUnregisterResource(cuda_vbo_resource_1));
     checkCudaErrors(cudaGraphicsUnregisterResource(cuda_vbo_resource_2));
-    checkCudaErrors(cudaGraphicsUnregisterResource(cuda_vbo_resource_heatSrc));
-    
+    checkCudaErrors(cudaGraphicsUnregisterResource(cuda_vbo_resource_3));
+
     // Terminates GLFW, clearing any resources allocated by GLFW.
     glfwTerminate();
 

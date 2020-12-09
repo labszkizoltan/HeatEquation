@@ -83,10 +83,15 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="HeatEquation_main.cu" />
+    <CudaCompile Include="src\cuda_kernels\HeatEquationKernels.cu" />
+    <CudaCompile Include="src\cuda_kernels\WaveEquationKernels.cu" />
+    <CudaCompile Include="WaveEquation_main_2.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\controls\observer.h" />
+    <ClInclude Include="GlobalVariables.h" />
+    <ClInclude Include="src\cuda_kernels\HeatEquationKernels.cuh" />
+    <ClInclude Include="src\cuda_kernels\WaveEquationKernels.cuh" />
     <ClInclude Include="src\rendering\buffer.h" />
     <ClInclude Include="src\rendering\coloured_mesh.h" />
     <ClInclude Include="src\rendering\grid_factory\CreateGridData.h" />

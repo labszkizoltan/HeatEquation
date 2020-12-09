@@ -25,6 +25,24 @@ namespace GridFactory
 		return gridData;
 	}
 
+	std::vector<Vec3D> CreateGridVertexData_with_amplitudes(int n, float amplitude, std::vector<float> amplitudes)
+	{
+		std::vector<Vec3D> gridData;
+		gridData.resize(n*n);
+
+		for (int i = 0; i < n; i++)
+		{
+			for (int j = 0; j < n; j++)
+			{
+				gridData[n*i+j] = Vec3D(float(i), amplitude*amplitudes[n*i+j], float(j));
+			}
+		}
+
+		return gridData;
+	}
+
+
+
 	std::vector<uint32_t> CreateGridIndexData(int n)
 	{
 		std::vector<uint32_t> indexData;
@@ -48,7 +66,28 @@ namespace GridFactory
 
 
 
+	std::vector<float> MapAmplitudeFields(int target_size, std::vector<float> src)
+	{
+		std::vector<float> target; target.resize(target_size * target_size);
+		int n_tar = (int)sqrt(target.size());
+		int n_src = (int)sqrt(src.size());
 
+		for (int i_tar = 0; i_tar < n_tar; i_tar++)
+		{
+			for (int j_tar = 0; j_tar < n_tar; j_tar++)
+			{
+				// get the countinuous coordinate in the target grid from the i/j indices
+				float x_tar = (float)i_tar / (float)n_tar + 1.0f / (float)(2 * n_tar);
+				float y_tar = (float)j_tar / (float)n_tar + 1.0f / (float)(2 * n_tar);
+				// based on the continuous coordinates, get the corresponding indices from the source grid
+				int i_src = floor(x_tar * (float)n_src);
+				int j_src = floor(y_tar * (float)n_src);
+				// put the values from the source grid to the target grid
+				target[i_tar * n_tar + j_tar] = src[i_src * n_src + j_src];
+			}
+		}
+		return target;
+	}
 
 
 
@@ -56,3 +95,21 @@ namespace GridFactory
 
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -33,7 +33,7 @@ void main()
 
 	float r = length(position_tmp);
 	float rho = length(vec2(position_tmp.x, position_tmp.y));
-	float theta = rho / position_tmp.z < 0.1 ? asin(rho / position_tmp.z) : acos(position_tmp.z / r);
+	float theta = rho / position_tmp.z < 0.05 ? asin(rho / position_tmp.z) : acos(position_tmp.z / r);
 
 	float theta_max = 1.0471955; // 60 degrees
 	float r_max = 5000000.0f;

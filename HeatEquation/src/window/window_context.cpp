@@ -22,7 +22,7 @@ MyWindow::MyWindow(int width, int height, std::string name)
 	// Init GLFW
 	glfwInit();
 	// Set all the required options for GLFW
-	glfwWindowHint(GLFW_SAMPLES, 4);
+	glfwWindowHint(GLFW_SAMPLES, 9);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -48,8 +48,12 @@ MyWindow::MyWindow(int width, int height, std::string name)
 	glViewport(0, 0, width, height);
 
 	glEnable(GL_DEPTH_TEST);
-	
 	glEnable(GL_BLEND);
+
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_BACK);
+	glFrontFace(GL_CW);
+
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	glEnable(GL_MULTISAMPLE);
@@ -143,7 +147,7 @@ void MyWindow::HandleUserInputs(Observer& obs, float timestep)
 	// Check if any events have been activated (key pressed, mouse moved etc.) and call corresponding response functions
 	glfwPollEvents();
 
-	float obsTurnRate = 2.5f / obs.zoom_level;
+	float obsTurnRate = 1.5f / obs.zoom_level;
 	static float obsMoveSpeed = 15.0f;
 
 	if (IsKeyPressed(GLFW_KEY_W)) { obs.MoveForward(timestep * obsMoveSpeed); }
@@ -178,7 +182,7 @@ void MyWindow::HandleUserInputs(Observer& obs, float timestep)
 	radiusFromCenter = sqrt(mousePos.first * mousePos.first + mousePos.second * mousePos.second);
 	//	player.m_BodyPtr->Turn(Vec3D(-mousePos.second, mousePos.first, 0.0f), 0.0001f * std::max(0.0f, radiusFromCenter - r_min) / player.m_Observer.zoom_level);
 		// Right now this is independent of the timestep
-	obs.Turn(mousePos.first * obs.orientation.f2 + mousePos.second * obs.orientation.f1, 0.00015f * std::max(0.0f, radiusFromCenter - r_min) / obs.zoom_level);
+	obs.Turn(mousePos.first * obs.orientation.f2 + mousePos.second * obs.orientation.f1, 0.0001f * std::max(0.0f, radiusFromCenter - r_min) / obs.zoom_level);
 }
 
 
